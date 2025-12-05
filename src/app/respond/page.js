@@ -1,10 +1,10 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import api from '../../utils/api';
 import { CheckCircle, XCircle, Loader } from 'lucide-react';
 
-export default function Respond() {
+function RespondContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const requestId = searchParams.get('requestId');
@@ -131,5 +131,17 @@ export default function Respond() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function Respond() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Loader className="h-12 w-12 text-red-600 animate-spin" />
+      </div>
+    }>
+      <RespondContent />
+    </Suspense>
   );
 }
