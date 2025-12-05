@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { User, Droplet, MapPin, Phone, Bell, Mail, MessageSquare, Edit } from 'lucide-react';
+import { User, Droplet, MapPin, Phone, Bell, Mail, MessageSquare, Edit, ChevronDown, ChevronUp } from 'lucide-react';
 import io from 'socket.io-client';
 import api from '../../utils/api';
 import { registerPush } from '../../utils/push';
@@ -16,6 +16,7 @@ export default function Dashboard() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [myRequests, setMyRequests] = useState([]);
   const [acceptedDonors, setAcceptedDonors] = useState({}); // Map requestId -> donors
+  const [expandedNotifications, setExpandedNotifications] = useState({}); // Track which notifications are expanded
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({});
   const [notificationAudio, setNotificationAudio] = useState(null);
@@ -167,6 +168,13 @@ export default function Dashboard() {
     return data;
   };
 
+  const toggleExpand = (notificationId) => {
+    setExpandedNotifications(prev => ({
+      ...prev,
+      [notificationId]: !prev[notificationId]
+    }));
+  };
+
   if (!user) return null;
 
   return (
@@ -299,7 +307,7 @@ export default function Dashboard() {
                 onClick={() => handleNotificationClick(notif)}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between">
-                  <div className="mb-2 sm:mb-0">
+                  <div className="mb-2 sm:mb-0 flex-1">
                     {notif.type === 'request_accepted' ? (
                        <>
                         <p className="text-sm font-medium text-green-600 truncate">
@@ -308,13 +316,29 @@ export default function Dashboard() {
                         <p className="mt-1 text-sm text-gray-500">
                           {notif.message}
                         </p>
-                        {/* Trigger fetch if not already loaded */}
-                        {notif.relatedRequestId && !acceptedDonors[notif.relatedRequestId] && (
+                        {/* Button to fetch and toggle donor details */}
+                        {notif.relatedRequestId && (
                             <button 
-                                onClick={() => fetchAcceptedDonors(notif.relatedRequestId)}
-                                className="text-xs text-blue-600 hover:underline mt-1"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!acceptedDonors[notif.relatedRequestId]) {
+                                    fetchAcceptedDonors(notif.relatedRequestId);
+                                  }
+                                  toggleExpand(notif._id);
+                                }}
+                                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 mt-2 font-medium"
                             >
-                                View Donor Details
+                                {expandedNotifications[notif._id] ? (
+                                  <>
+                                    <ChevronUp className="h-3 w-3" />
+                                    Hide Donor Details
+                                  </>
+                                ) : (
+                                  <>
+                                    <ChevronDown className="h-3 w-3" />
+                                    View Donor Details
+                                  </>
+                                )}
                             </button>
                         )}
                        </>
@@ -334,38 +358,70 @@ export default function Dashboard() {
                   </div>
                   {(user.role === 'donor' || user.isAvailable) && notif.type !== 'request_accepted' && (
                     <button
-                      onClick={() => handleAcceptRequest(notif)}
-                      className="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAcceptRequest(notif);
+                      }}
+                      className="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 mt-2 sm:mt-0"
                     >
                       Accept
                     </button>
                   )}
                 </div>
                 
-                {/* Accepted Donors List for this notification's request */}
-                {notif.relatedRequestId && acceptedDonors[notif.relatedRequestId] && (
-                    <div className="mt-4 bg-gray-50 p-4 rounded-md">
-                        <h4 className="text-sm font-bold text-gray-700 mb-2">Willing Donors:</h4>
+                {/* Collapsible Accepted Donors List */}
+                {notif.relatedRequestId && expandedNotifications[notif._id] && acceptedDonors[notif.relatedRequestId] && (
+                    <div className="mt-4 bg-gradient-to-br from-gray-50 to-blue-50 p-4 rounded-lg border border-gray-200 transition-all duration-300">
+                        <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+                          <Droplet className="h-4 w-4 text-red-500" />
+                          Willing Donors ({acceptedDonors[notif.relatedRequestId].length})
+                        </h4>
                         <ul className="space-y-3">
                             {acceptedDonors[notif.relatedRequestId].map(donor => (
-                                <li key={donor._id} className="flex items-center justify-between bg-white p-3 rounded shadow-sm">
-                                    <div>
-                                        <p className="text-sm font-medium text-gray-900">{donor.name}</p>
-                                        <p className="text-xs text-gray-500">
-                                            Email: {maskData(donor.email, 'email')}
+                                <li key={donor._id} className="flex items-center justify-between bg-white p-3 rounded-lg shadow-sm hover:shadow-md transition-shadow">
+                                    <div className="flex-1">
+                                        <p className="text-sm font-semibold text-gray-900">{donor.name}</p>
+                                        <p className="text-xs text-gray-600 mt-1">
+                                            <span className="inline-flex items-center gap-1">
+                                              <Mail className="h-3 w-3" />
+                                              {maskData(donor.email, 'email')}
+                                            </span>
                                         </p>
-                                        <p className="text-xs text-gray-500">
-                                            Phone: {maskData(donor.phone, 'phone')}
+                                        <p className="text-xs text-gray-600 mt-1">
+                                            <span className="inline-flex items-center gap-1">
+                                              <Phone className="h-3 w-3" />
+                                              {maskData(donor.phone, 'phone')}
+                                            </span>
                                         </p>
+                                        {donor.bloodType && (
+                                          <p className="text-xs font-medium text-red-600 mt-1">
+                                            Blood Type: {donor.bloodType}
+                                          </p>
+                                        )}
                                     </div>
-                                    <div className="flex space-x-2">
-                                        <a href={`tel:${donor.phone}`} className="p-2 bg-green-100 text-green-600 rounded-full hover:bg-green-200" title="Call">
+                                    <div className="flex flex-col sm:flex-row gap-2 ml-3">
+                                        <a 
+                                          href={`tel:${donor.phone}`} 
+                                          className="p-2 bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors" 
+                                          title="Call"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
                                             <Phone className="h-4 w-4" />
                                         </a>
-                                        <a href={`mailto:${donor.email}`} className="p-2 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200" title="Email">
+                                        <a 
+                                          href={`mailto:${donor.email}`} 
+                                          className="p-2 bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors" 
+                                          title="Email"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
                                             <Mail className="h-4 w-4" />
                                         </a>
-                                        <a href={`sms:${donor.phone}`} className="p-2 bg-yellow-100 text-yellow-600 rounded-full hover:bg-yellow-200" title="Message">
+                                        <a 
+                                          href={`sms:${donor.phone}`} 
+                                          className="p-2 bg-yellow-100 text-yellow-700 rounded-full hover:bg-yellow-200 transition-colors" 
+                                          title="Message"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
                                             <MessageSquare className="h-4 w-4" />
                                         </a>
                                     </div>

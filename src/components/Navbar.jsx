@@ -36,7 +36,14 @@ export default function Navbar() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
+ const fetchNotifications = async (userId) => {
+    try {
+      const res = await api.get(`/notifications/${userId}`);
+      setNotifications(res.data.filter(n => !n.isRead));
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    }
+  };
   useEffect(() => {
     if (status === 'authenticated' && session?.user) {
       fetchNotifications(session.user._id);
@@ -57,15 +64,6 @@ export default function Navbar() {
       if (socket) socket.disconnect();
     }
   }, [status, session]);
-
-  const fetchNotifications = async (userId) => {
-    try {
-      const res = await api.get(`/notifications/${userId}`);
-      setNotifications(res.data.filter(n => !n.isRead));
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-    }
-  };
 
   const handleLogout = async () => {
     await signOut({ redirect: false });

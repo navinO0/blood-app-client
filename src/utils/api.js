@@ -24,22 +24,34 @@ api.interceptors.request.use(async (config) => {
 
   if (enableEncryption && config.data) {
     // Support optional encryptFields array to encrypt specific fields separately
-    const { encryptFields = [], ...rest } = config.data;
-    const encrypted = { data: encryptData(rest) };
-    encryptFields.forEach((field) => {
-      if (rest[field] !== undefined) {
-        encrypted[field] = encryptData(rest[field]);
-      }
-    });
-    config.data = encrypted;
+    // Support encryptionKeyId to specify which key to use (default, sensitive, critical)
+    const { encryptFields = [], encryptionKeyId = 'default', ...rest } = config.data;
+    
+    // Set the key ID in a custom header so the server knows which key to use for decryption
+    config.headers['X-Encryption-Key-Id'] = encryptionKeyId;
+    
+    // Encrypt the values recursively while keeping the object structure intact
+    // This satisfies "api are failing keep schema same" & "only encrypt the values"
+    config.data = encryptObjectValues(rest, encryptionKeyId);
+
+    // We no longer need to check for encryptFields since we are encrypting everything recursively as per "encrypt values in the payload" request
+    // If selective field encryption is absolutely required later, we can modify encryptObjectValues to accept a whitelist.
   }
   return config;
 }, (error) => Promise.reject(error));
 
 api.interceptors.response.use((response) => {
-  if (enableEncryption && response.data && response.data.data) {
-    const keyId = response.data.keyId || 'default';
-    response.data = decryptData(response.data.data, keyId);
+  if (enableEncryption && response.data) {
+    // Check header for keyId, or default
+    const keyId = response.headers['x-encryption-key-id'] || 'default';
+    
+    // Decrypt the values recursively
+    response.data = decryptObjectValues(response.data, keyId);
+    
+    // Handle the legacy case where response might be { data: "ciphertext" } (if we just switched server)
+    // Actually, decryptObjectValues handles objects, so if response.data IS the object wrapper, it will decrypt values inside. 
+    // If response.data is just the data object (as per "keep schema same"), it will walk it.
+    // If response.data was { data: ... } previously, that structure is gone now.
   }
   return response;
 }, (error) => Promise.reject(error));
