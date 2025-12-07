@@ -96,12 +96,18 @@ export default function Dashboard() {
       }
       
       if (parsedUser.role === 'seeker') {
+        // Fetch My Requests
+        api.get('/blood/my-requests').then(res => setMyRequests(res.data)).catch(err => console.error(err));
+
         socket.on('donation-accepted-notification', (data) => {
            if (data.seekerId === parsedUser._id) {
              setNotifications((prev) => [data, ...prev]);
              setUnreadCount(prev => prev + 1);
              // Refresh accepted donors for this request
              fetchAcceptedDonors(data.requestId);
+             // Refresh my requests to show updated status
+             api.get('/blood/my-requests').then(res => setMyRequests(res.data)).catch(err => console.error(err));
+             
              // Play notification sound
              if (audio) {
                audio.play().catch(err => console.log('Audio play failed:', err));
@@ -458,6 +464,52 @@ export default function Dashboard() {
                 </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* My Requests Section (Seeker Only) */}
+      {user.role === 'seeker' && (
+        <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
+          <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
+             <h3 className="text-lg leading-6 font-medium text-gray-900 flex items-center">
+                <Clock className="h-5 w-5 mr-2 text-blue-500" /> My Blood Requests
+             </h3>
+          </div>
+          <ul className="divide-y divide-gray-200">
+             {myRequests.length === 0 ? (
+                 <li className="px-4 py-4 text-gray-500 text-center">No active requests</li>
+             ) : (
+                 myRequests.map(req => (
+                     <li key={req._id} className="px-4 py-4 sm:px-6">
+                         <div className="flex justify-between items-start">
+                             <div>
+                                 <h4 className="text-lg font-bold text-red-600 flex items-center gap-2">
+                                     {req.bloodType} Blood Needed
+                                     {req.status === 'fulfilled' && <span className="bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded-full">Fulfilled</span>}
+                                     {req.status === 'expired' && <span className="bg-gray-100 text-gray-800 text-xs px-2 py-0.5 rounded-full">Expired</span>}
+                                 </h4>
+                                 {req.patientName && (
+                                     <p className="text-sm font-semibold text-gray-800 mt-1">
+                                         Patient: {req.patientName}
+                                     </p>
+                                 )}
+                                 <p className="text-sm text-gray-500 mt-1 flex items-center">
+                                     <MapPin className="h-4 w-4 mr-1"/> {req.location}
+                                 </p>
+                                 <p className="text-xs text-gray-400 mt-1">
+                                     Posted: {new Date(req.createdAt).toLocaleDateString()}
+                                 </p>
+                             </div>
+                             <div className="text-right">
+                                 <p className="text-sm font-medium text-gray-900">
+                                     {req.acceptedBy?.length || 0} Donors Accepted
+                                 </p>
+                             </div>
+                         </div>
+                     </li>
+                 ))
+             )}
+          </ul>
         </div>
       )}
 

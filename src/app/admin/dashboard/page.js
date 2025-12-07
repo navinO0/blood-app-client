@@ -73,6 +73,16 @@ export default function AdminDashboard() {
                   <Droplet className="h-5 w-5 text-red-600" />
                   Request for {request.bloodType}
                 </h3>
+                <div className="mt-1 text-sm">
+                  {request.patientName && (
+                    <p className="font-medium text-gray-900">
+                      Patient: <span className="text-gray-700">{request.patientName}</span>
+                    </p>
+                  )}
+                  <p className="text-gray-500">
+                    Requested by: <span className="font-medium text-gray-900">{request.seekerId?.name || 'Unknown'}</span>
+                  </p>
+                </div>
                 <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
                   <MapPin className="h-4 w-4" /> {request.location}
                 </p>

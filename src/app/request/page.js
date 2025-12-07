@@ -7,6 +7,7 @@ import { Copy, MessageCircle, Mail, Share2, CheckCircle, MapPin } from 'lucide-r
 
 export default function RequestBlood() {
   const [user, setUser] = useState(null);
+  const [patientName, setPatientName] = useState('');
   const [bloodType, setBloodType] = useState('');
   const [location, setLocation] = useState('');
   const [locationUrl, setLocationUrl] = useState('');
@@ -40,6 +41,7 @@ export default function RequestBlood() {
     try {
       const response = await api.post('/blood/request', {
         seekerId: user._id,
+        patientName,
         bloodType,
         location,
         locationUrl: locationUrl || undefined,
@@ -48,6 +50,7 @@ export default function RequestBlood() {
       setCreatedRequest(response.data);
       setMessage('Request posted successfully! Share the link below to find donors.');
       // Reset form
+      setPatientName('');
       setBloodType('');
       setLocation('');
       setLocationUrl('');
@@ -75,16 +78,24 @@ export default function RequestBlood() {
 
   const shareViaWhatsApp = () => {
     const link = getShareableLink();
-    const text = `Urgent Blood Request!\n\nBlood Type: ${createdRequest.bloodType}\nLocation: ${createdRequest.location}\n\nPlease help if you can: ${link}`;
+    const text = `Urgent Blood Request!\n\nPatient Name: ${createdRequest.patientName || 'N/A'}\nBlood Type: ${createdRequest.bloodType}\nLocation: ${createdRequest.location}\n\nPlease help if you can: ${link}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   const shareViaEmail = () => {
     const link = getShareableLink();
     const subject = `Urgent Blood Request - ${createdRequest.bloodType} needed`;
-    const body = `Hello,\n\nThere is an urgent blood request:\n\nBlood Type: ${createdRequest.bloodType}\nLocation: ${createdRequest.location}\n\nIf you can help, please visit: ${link}\n\nThank you!`;
+    const body = `Hello,\n\nThere is an urgent blood request:\n\nPatient Name: ${createdRequest.patientName || 'N/A'}\nBlood Type: ${createdRequest.bloodType}\nLocation: ${createdRequest.location}\n\nIf you can help, please visit: ${link}\n\nThank you!`;
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
+
+  if (status === 'loading') {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-500"></div>
+      </div>
+    );
+  }
 
   if (!user) return null;
 
@@ -145,6 +156,17 @@ export default function RequestBlood() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4 bg-white p-6 rounded-xl shadow-lg">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Patient Name</label>
+          <input
+            type="text"
+            required
+            className="mt-1 block w-full border border-gray-300 rounded-lg shadow-sm p-3 focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            value={patientName}
+            onChange={(e) => setPatientName(e.target.value)}
+            placeholder="Name of the patient"
+          />
+        </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Blood Type Needed</label>
           <select
