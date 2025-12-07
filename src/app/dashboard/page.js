@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { User, Droplet, MapPin, Phone, Bell, Mail, MessageSquare, Edit, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { User, Droplet, MapPin, Phone, Bell, Mail, MessageSquare, Edit, ChevronDown, ChevronUp, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
 import io from 'socket.io-client';
 import api from '../../utils/api';
 import { registerPush } from '../../utils/push';
@@ -18,6 +18,7 @@ export default function Dashboard() {
   const [acceptedDonors, setAcceptedDonors] = useState({}); // Map requestId -> donors
   const [expandedNotifications, setExpandedNotifications] = useState({}); // Track which notifications are expanded
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false); // New state for forced completion
   const [editFormData, setEditFormData] = useState({});
   const [notificationAudio, setNotificationAudio] = useState(null);
   const router = useRouter();
@@ -35,27 +36,53 @@ export default function Dashboard() {
     if (status === 'unauthenticated') {
       router.push('/login');
     } else if (status === 'authenticated' && session?.user) {
-      const parsedUser = session.user;
-      setUser(parsedUser);
-      setEditFormData(parsedUser);
+      // Optimistically set user from session, but don't check validity yet
+      setUser(session.user);
+      setEditFormData(session.user);
+
+      // Fetch fresh user data from backend to ensure we have the latest details
+      // This fixes the issue where session is stale after profile update
+      api.get('/auth/me')
+        .then(res => {
+          const freshUser = res.data;
+          setUser(freshUser);
+          setEditFormData(freshUser);
+
+          // Check for missing details using FRESH data
+          if (!freshUser.phone || !freshUser.location || !freshUser.bloodType) {
+            setIsCompletionModalOpen(true);
+          } else {
+            setIsCompletionModalOpen(false);
+          }
+
+          // Register for Push Notifications
+          registerPush(freshUser._id);
+
+          // Fetch notifications and unread count
+          return api.get(`/notifications/${freshUser._id}`);
+        })
+        .then(res => {
+          if (res) {
+            setNotifications(res.data);
+            const unread = res.data.filter(n => !n.isRead).length;
+            setUnreadCount(unread);
+          }
+        })
+        .catch(err => {
+          console.error("Failed to fetch fresh user data:", err);
+          // Fallback to session check if API fails? 
+          // Better to rely on what we have or retry. 
+        });
       
       // Initialize notification audio
       const audio = new Audio('/notification.mp3');
       setNotificationAudio(audio);
-      
-      // Register for Push Notifications
-      registerPush(parsedUser._id);
-
-      // Fetch notifications and unread count
-      api.get(`/notifications/${parsedUser._id}`).then(res => {
-        setNotifications(res.data);
-        const unread = res.data.filter(n => !n.isRead).length;
-        setUnreadCount(unread);
-      });
 
       // Initialize Socket.io
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
       socket = io(apiUrl);
+      
+      const parsedUser = session.user; // Use session user for socket logic initially
 
       if (parsedUser.role === 'donor' || parsedUser.isAvailable) {
         socket.on('blood-request-notification', (data) => {
@@ -113,6 +140,20 @@ export default function Dashboard() {
       alert('Failed to accept request.');
     }
   };
+
+  const handleConfirmDonation = async (donorId, requestId) => {
+      if (!window.confirm("Are you sure you want to confirm that this donor has donated blood? This will mark them as unavailable.")) return;
+
+      try {
+          await api.post('/blood/confirm-donation', { donorId, requestId });
+          alert("Donation confirmed successfully!");
+          // Refresh donors list to reflect changes (e.g. check availability or last donated date)
+          fetchAcceptedDonors(requestId);
+      } catch (error) {
+          console.error("Error confirming donation:", error);
+          alert("Failed to confirm donation.");
+      }
+  };
   
   const handleNotificationClick = async (notification) => {
     try {
@@ -146,14 +187,31 @@ export default function Dashboard() {
     e.preventDefault();
     try {
         const res = await api.put('/auth/profile', { userId: user._id, ...editFormData });
-        setUser(res.data);
-        localStorage.setItem('user', JSON.stringify(res.data));
+        const updatedUser = res.data;
+        setUser(updatedUser);
+        
         setIsEditModalOpen(false);
+        // Check if completion modal can be closed
+        if (updatedUser.phone && updatedUser.location && updatedUser.bloodType) {
+            setIsCompletionModalOpen(false);
+        }
+        
         alert('Profile updated successfully!');
     } catch (error) {
         console.error('Update failed:', error);
         alert('Failed to update profile.');
     }
+  };
+  
+  const handleCompletionSubmit = async (e) => {
+      e.preventDefault();
+       // Validation
+      if (!editFormData.phone || !editFormData.location || !editFormData.bloodType) {
+          alert("Please fill in all required fields.");
+          return;
+      }
+      
+      await handleEditSubmit(e);
   };
 
   const maskData = (data, type) => {
@@ -168,12 +226,48 @@ export default function Dashboard() {
     return data;
   };
 
-  const toggleExpand = (notificationId) => {
+  const toggleExpand = (notificationKey) => {
     setExpandedNotifications(prev => ({
       ...prev,
-      [notificationId]: !prev[notificationId]
+      [notificationKey]: !prev[notificationKey]
     }));
   };
+
+  const isInCoolingPeriod = (userData) => {
+      if (!userData?.lastDonatedDate) return false;
+      const lastDonated = new Date(userData.lastDonatedDate);
+      const coolingDays = parseInt(process.env.NEXT_PUBLIC_COOLING_PERIOD_DAYS) || 90;
+      const coolingDate = new Date();
+      coolingDate.setDate(coolingDate.getDate() - coolingDays);
+      return lastDonated > coolingDate;
+  };
+
+  // Group notifications by relatedRequestId for 'request_accepted' type
+  const groupedNotifications = notifications.reduce((acc, notif) => {
+      if (notif.type === 'request_accepted' && notif.relatedRequestId) {
+          // Use relatedRequestId as key for grouping
+          const key = notif.relatedRequestId;
+          if (!acc[key]) {
+              acc[key] = { ...notif, count: 1, latestTimestamp: notif.createdAt || notif.timestamp };
+          } else {
+              acc[key].count += 1;
+              // Keep latest timestamp
+              if (new Date(notif.createdAt || notif.timestamp) > new Date(acc[key].latestTimestamp)) {
+                  acc[key].latestTimestamp = notif.createdAt || notif.timestamp;
+              }
+              // If any in the group is unread, mark group as unread (simplification)
+              if (!notif.isRead) acc[key].isRead = false;
+          }
+      } else {
+          // For other types, use _id or unique key
+          acc[notif._id] = notif;
+      }
+      return acc;
+  }, {});
+
+  const displayedNotifications = Object.values(groupedNotifications).sort((a, b) => 
+      new Date(b.latestTimestamp || b.createdAt || b.timestamp) - new Date(a.latestTimestamp || a.createdAt || a.timestamp)
+  );
 
   if (!user) return null;
 
@@ -192,7 +286,7 @@ export default function Dashboard() {
             >
                 <Edit className="h-4 w-4 mr-1" /> Edit Profile
             </button>
-            {user.role === 'seeker' && (
+            {user.role === 'seeker' && !isInCoolingPeriod(user) && (
                <div className="flex items-center">
                  <span className="mr-2 text-sm text-gray-600">Available to Donate?</span>
                  <button 
@@ -251,7 +345,7 @@ export default function Dashboard() {
                   {user.lastDonatedDate ? (
                     <>
                       {new Date(user.lastDonatedDate).toLocaleDateString()}
-                      {new Date(user.lastDonatedDate) > new Date(new Date().setMonth(new Date().getMonth() - 3)) && (
+                      {isInCoolingPeriod(user) && (
                         <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                           Cooling Period
                         </span>
@@ -267,7 +361,71 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Edit Profile Modal */}
+      {/* Profile Completion Modal (Forced) */}
+      {isCompletionModalOpen && (
+          <div className="fixed inset-0 bg-gray-900 bg-opacity-90 overflow-y-auto h-full w-full z-50 flex items-center justify-center backdrop-blur-sm">
+            <div className="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md border-l-4 border-yellow-500">
+              <div className="flex items-center mb-4 text-yellow-600">
+                  <AlertTriangle className="h-6 w-6 mr-2" />
+                  <h2 className="text-xl font-bold">Additional Details Required</h2>
+              </div>
+              <p className="mb-6 text-gray-600 text-sm">
+                  To continue using BloodLink, please update your profile with your phone number, location, and blood type. These are critical for connecting donors and seekers.
+              </p>
+              <form onSubmit={handleCompletionSubmit} className="space-y-4">
+                  {/* Name (Read Only) */}
+                   <div className="opacity-50 pointer-events-none">
+                      <label className="block text-sm font-medium text-gray-700">Name</label>
+                      <input type="text" value={editFormData.name || ''} readOnly className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-gray-100" />
+                  </div>
+                  
+                  <div>
+                      <label className="block text-sm font-bold text-gray-700">Phone <span className="text-red-500">*</span></label>
+                      <input 
+                          type="tel" 
+                          required
+                          placeholder="e.g 9876543210"
+                          value={editFormData.phone || ''} 
+                          onChange={e => setEditFormData({...editFormData, phone: e.target.value})} 
+                          className="mt-1 block w-full border-2 border-blue-100 focus:border-blue-500 rounded-md shadow-sm p-2" 
+                      />
+                  </div>
+                  <div>
+                      <label className="block text-sm font-bold text-gray-700">Location (City/Area) <span className="text-red-500">*</span></label>
+                      <input 
+                          type="text" 
+                          required
+                          placeholder="e.g Mumbai, Andheri"
+                          value={editFormData.location || ''} 
+                          onChange={e => setEditFormData({...editFormData, location: e.target.value})} 
+                          className="mt-1 block w-full border-2 border-blue-100 focus:border-blue-500 rounded-md shadow-sm p-2" 
+                      />
+                  </div>
+                  <div>
+                      <label className="block text-sm font-bold text-gray-700">Blood Type <span className="text-red-500">*</span></label>
+                      <select 
+                          required
+                          value={editFormData.bloodType || ''} 
+                          onChange={e => setEditFormData({...editFormData, bloodType: e.target.value})} 
+                          className="mt-1 block w-full border-2 border-blue-100 focus:border-blue-500 rounded-md shadow-sm p-2"
+                      >
+                          <option value="">Select Blood Type</option>
+                          {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(type => (
+                              <option key={type} value={type}>{type}</option>
+                          ))}
+                      </select>
+                  </div>
+                  <div className="mt-6">
+                      <button type="submit" className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-md transition-colors">
+                          Save & Continue
+                      </button>
+                  </div>
+              </form>
+            </div>
+          </div>
+      )}
+
+      {/* Edit Profile Modal (Standard) */}
       {isEditModalOpen && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center">
           <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
@@ -316,143 +474,170 @@ export default function Dashboard() {
           </h3>
         </div>
         <ul className="divide-y divide-gray-200">
-          {notifications.length === 0 ? (
+          {displayedNotifications.length === 0 ? (
             <li className="px-4 py-4 text-gray-500 text-center">No new notifications</li>
           ) : (
-            notifications.map((notif, index) => (
-              <li 
-                key={index} 
-                className={`px-4 py-4 sm:px-6 hover:bg-gray-50 transition-colors cursor-pointer ${
-                  !notif.isRead ? 'bg-blue-50' : ''
-                }`}
-                onClick={() => handleNotificationClick(notif)}
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between">
-                  <div className="mb-2 sm:mb-0 flex-1">
-                    {notif.type === 'request_accepted' ? (
-                       <>
-                        <p className="text-sm font-medium text-green-600 truncate">
-                          Request Accepted!
-                        </p>
-                        <p className="mt-1 text-sm text-gray-500">
-                          {notif.message}
-                        </p>
-                        {/* Button to fetch and toggle donor details */}
-                        {notif.relatedRequestId && (
-                            <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (!acceptedDonors[notif.relatedRequestId]) {
-                                    fetchAcceptedDonors(notif.relatedRequestId);
-                                  }
-                                  toggleExpand(notif._id);
-                                }}
-                                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 mt-2 font-medium"
-                            >
-                                {expandedNotifications[notif._id] ? (
-                                  <>
-                                    <ChevronUp className="h-3 w-3" />
-                                    Hide Donor Details
-                                  </>
-                                ) : (
-                                  <>
-                                    <ChevronDown className="h-3 w-3" />
-                                    View Donor Details
-                                  </>
-                                )}
-                            </button>
-                        )}
-                       </>
-                    ) : (
-                      <>
-                        <p className="text-sm font-medium text-red-600 truncate">
-                          Urgent: {notif.bloodType} Blood Needed
-                        </p>
-                        <p className="mt-1 text-sm text-gray-500">
-                          Location: {notif.location}
-                        </p>
-                      </>
-                    )}
-                    <p className="text-xs text-gray-400 mt-1">
-                      {new Date(notif.createdAt || notif.timestamp).toLocaleString()}
-                    </p>
-                  </div>
-                  {(user.role === 'donor' || user.isAvailable) && notif.type !== 'request_accepted' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleAcceptRequest(notif);
-                      }}
-                      className="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 mt-2 sm:mt-0"
-                    >
-                      Accept
-                    </button>
-                  )}
-                </div>
+            displayedNotifications.map((notif) => {
+                // Determine logic key for expansion
+                const notificationKey = notif.relatedRequestId || notif._id;
                 
-                {/* Collapsible Accepted Donors List */}
-                {notif.relatedRequestId && expandedNotifications[notif._id] && acceptedDonors[notif.relatedRequestId] && (
-                    <div className="mt-4 bg-gradient-to-br from-gray-50 to-blue-50 p-4 rounded-lg border border-gray-200 transition-all duration-300">
-                        <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
-                          <Droplet className="h-4 w-4 text-red-500" />
-                          Willing Donors ({acceptedDonors[notif.relatedRequestId].length})
-                        </h4>
-                        <ul className="space-y-3">
-                            {acceptedDonors[notif.relatedRequestId].map(donor => (
-                                <li key={donor._id} className="flex items-center justify-between bg-white p-3 rounded-lg shadow-sm hover:shadow-md transition-shadow">
-                                    <div className="flex-1">
-                                        <p className="text-sm font-semibold text-gray-900">{donor.name}</p>
-                                        <p className="text-xs text-gray-600 mt-1">
-                                            <span className="inline-flex items-center gap-1">
-                                              <Mail className="h-3 w-3" />
-                                              {maskData(donor.email, 'email')}
-                                            </span>
-                                        </p>
-                                        <p className="text-xs text-gray-600 mt-1">
-                                            <span className="inline-flex items-center gap-1">
-                                              <Phone className="h-3 w-3" />
-                                              {maskData(donor.phone, 'phone')}
-                                            </span>
-                                        </p>
-                                        {donor.bloodType && (
-                                          <p className="text-xs font-medium text-red-600 mt-1">
-                                            Blood Type: {donor.bloodType}
-                                          </p>
-                                        )}
-                                    </div>
-                                    <div className="flex flex-col sm:flex-row gap-2 ml-3">
-                                        <a 
-                                          href={`tel:${donor.phone}`} 
-                                          className="p-2 bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors" 
-                                          title="Call"
-                                          onClick={(e) => e.stopPropagation()}
-                                        >
-                                            <Phone className="h-4 w-4" />
-                                        </a>
-                                        <a 
-                                          href={`mailto:${donor.email}`} 
-                                          className="p-2 bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors" 
-                                          title="Email"
-                                          onClick={(e) => e.stopPropagation()}
-                                        >
-                                            <Mail className="h-4 w-4" />
-                                        </a>
-                                        <a 
-                                          href={`sms:${donor.phone}`} 
-                                          className="p-2 bg-yellow-100 text-yellow-700 rounded-full hover:bg-yellow-200 transition-colors" 
-                                          title="Message"
-                                          onClick={(e) => e.stopPropagation()}
-                                        >
-                                            <MessageSquare className="h-4 w-4" />
-                                        </a>
-                                    </div>
-                                </li>
-                            ))}
-                        </ul>
+                return (
+                  <li 
+                    key={notif._id} 
+                    className={`px-4 py-4 sm:px-6 hover:bg-gray-50 transition-colors cursor-pointer ${
+                      !notif.isRead ? 'bg-blue-50' : ''
+                    }`}
+                    onClick={() => handleNotificationClick(notif)}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                      <div className="mb-2 sm:mb-0 flex-1">
+                        {notif.type === 'request_accepted' ? (
+                           <>
+                            <p className="text-sm font-medium text-green-600 truncate">
+                              Request Accepted!
+                            </p>
+                            <p className="mt-1 text-sm text-gray-500">
+                                {notif.count && notif.count > 1 
+                                  ? `${notif.count} donors have accepted your blood request.` 
+                                  : notif.message}
+                            </p>
+                            {notif.relatedRequestId && (
+                                <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (!acceptedDonors[notif.relatedRequestId]) {
+                                        fetchAcceptedDonors(notif.relatedRequestId);
+                                      }
+                                      toggleExpand(notificationKey);
+                                    }}
+                                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 mt-2 font-medium"
+                                >
+                                    {expandedNotifications[notificationKey] ? (
+                                      <>
+                                        <ChevronUp className="h-3 w-3" />
+                                        Hide Donor Details
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ChevronDown className="h-3 w-3" />
+                                        View Donor Details
+                                      </>
+                                    )}
+                                </button>
+                            )}
+                           </>
+                        ) : (
+                          <>
+                            <p className="text-sm font-medium text-red-600 truncate">
+                              Urgent: {notif.bloodType} Blood Needed
+                            </p>
+                            <p className="mt-1 text-sm text-gray-500">
+                              Location: {notif.location}
+                            </p>
+                          </>
+                        )}
+                        <p className="text-xs text-gray-400 mt-1">
+                          {new Date(notif.latestTimestamp || notif.createdAt || notif.timestamp).toLocaleString()}
+                        </p>
+                      </div>
+                      {(user.role === 'donor' || user.isAvailable) && notif.type !== 'request_accepted' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAcceptRequest(notif);
+                          }}
+                          className="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 mt-2 sm:mt-0"
+                        >
+                          Accept
+                        </button>
+                      )}
                     </div>
-                )}
-              </li>
-            ))
+                    
+                    {notif.relatedRequestId && expandedNotifications[notificationKey] && acceptedDonors[notif.relatedRequestId] && (
+                        <div className="mt-4 bg-gradient-to-br from-gray-50 to-blue-50 p-4 rounded-lg border border-gray-200 transition-all duration-300">
+                            <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+                              <Droplet className="h-4 w-4 text-red-500" />
+                              Willing Donors ({acceptedDonors[notif.relatedRequestId].length})
+                            </h4>
+                            <ul className="space-y-3">
+                                {acceptedDonors[notif.relatedRequestId].map(donor => (
+                                    <li key={donor._id} className="flex flex-col bg-white p-3 rounded-lg shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex-1">
+                                                <p className="text-sm font-semibold text-gray-900">{donor.name}</p>
+                                                <p className="text-xs text-gray-600 mt-1">
+                                                    <span className="inline-flex items-center gap-1">
+                                                      <Mail className="h-3 w-3" />
+                                                      {maskData(donor.email, 'email')}
+                                                    </span>
+                                                </p>
+                                                <p className="text-xs text-gray-600 mt-1">
+                                                    <span className="inline-flex items-center gap-1">
+                                                      <Phone className="h-3 w-3" />
+                                                      {maskData(donor.phone, 'phone')}
+                                                    </span>
+                                                </p>
+                                                {donor.bloodType && (
+                                                  <p className="text-xs font-medium text-red-600 mt-1">
+                                                    Blood Type: {donor.bloodType}
+                                                  </p>
+                                                )}
+                                                {isInCoolingPeriod(donor) && (
+                                                   <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                                      <CheckCircle className="h-3 w-3 mr-1" /> Donated Recently
+                                                   </span>
+                                                )}
+                                            </div>
+                                            <div className="flex flex-col sm:flex-row gap-2 ml-3">
+                                                <a 
+                                                  href={`tel:${donor.phone}`} 
+                                                  className="p-2 bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors" 
+                                                  title="Call"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    <Phone className="h-4 w-4" />
+                                                </a>
+                                                <a 
+                                                  href={`mailto:${donor.email}`} 
+                                                  className="p-2 bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors" 
+                                                  title="Email"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    <Mail className="h-4 w-4" />
+                                                </a>
+                                                <a 
+                                                  href={`sms:${donor.phone}`} 
+                                                  className="p-2 bg-yellow-100 text-yellow-700 rounded-full hover:bg-yellow-200 transition-colors" 
+                                                  title="Message"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    <MessageSquare className="h-4 w-4" />
+                                                </a>
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Admin Only: Confirm Donation Button */}
+                                        {user.role === 'admin' && !isInCoolingPeriod(donor) && (
+                                            <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end">
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleConfirmDonation(donor._id, notif.relatedRequestId);
+                                                  }}
+                                                  className="text-xs bg-gray-800 text-white px-3 py-1 rounded hover:bg-black transition-colors"
+                                                >
+                                                  Mark as Donated
+                                                </button>
+                                            </div>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                  </li>
+                );
+            })
           )}
         </ul>
       </div>
