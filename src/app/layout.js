@@ -5,6 +5,9 @@ import AuthProvider from "../components/AuthProvider";
 export const metadata = {
   title: "BloodLink - Connect Blood Donors & Seekers",
   description: "A platform to connect blood donors with those in need.",
+  icons: {
+    icon: '/favicon.png',
+  },
 };
 
 export default function RootLayout({ children }) {
