@@ -68,11 +68,32 @@ export default function Navbar() {
       socket.on('connect', () => console.log('Navbar Socket connected:', socket.id));
       socket.on('connect_error', (err) => console.error('Navbar Socket connection error:', err));
 
-      if (session?.user?.role === 'seeker') {
+      if (session?.user?.role === 'seeker' || session?.user?.role === 'admin') {
         socket.on('donation-accepted-notification', (data) => {
             console.log('Navbar received donation-accepted:', data);
-            if (data.seekerId === session.user._id) {
+            
+            const isRelevant = (session.user.role === 'seeker' && data.seekerId === session.user._id) || session.user.role === 'admin';
+            
+            if (isRelevant) {
                 setNotifications(prev => [data, ...prev]);
+                
+                // Play sound
+                try {
+                    const audio = new Audio('/notification.mp3');
+                    audio.play().catch(e => console.error("Audio play failed (interaction required):", e));
+                } catch (e) {
+                    console.error("Audio error:", e);
+                }
+
+                // Show Toaster for Admin
+                if (session.user.role === 'admin') {
+                    setAdminToast({ 
+                        visible: true, 
+                        message: `Donation Accepted by ${data.donorName || 'a donor'}`,
+                        time: new Date().toLocaleTimeString() 
+                    });
+                    setTimeout(() => setAdminToast(null), 5000);
+                }
             }
         });
       }
