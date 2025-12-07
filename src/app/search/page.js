@@ -1,6 +1,8 @@
 "use client";
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import api from '../../utils/api';
+import { useSession } from "next-auth/react";
 import { Search as SearchIcon, MapPin, Droplet, Phone } from 'lucide-react';
 
 export default function Search() {
@@ -9,6 +11,14 @@ export default function Search() {
   const [donors, setDonors] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
+  if (status === 'loading') return <p>Loading...</p>;
+  if (status === 'unauthenticated' || (session?.user?.role !== 'admin')) {
+    router.push('/');
+    return null;
+  }
 
   const handleSearch = async (e) => {
     e.preventDefault();

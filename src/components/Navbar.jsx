@@ -89,11 +89,19 @@ export default function Navbar() {
           
           <div className="hidden md:flex items-center space-x-4">
             <Link href="/" className="hover:bg-red-700 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 hover:scale-105">Home</Link>
-            <Link href="/search" className="hover:bg-red-700 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 hover:scale-105">Find Blood</Link>
+            
+            {session?.user?.role === 'admin' && (
+              <Link href="/search" className="hover:bg-red-700 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 hover:scale-105">Find Blood</Link>
+            )}
             
             {status === 'authenticated' ? (
               <>
-                <Link href="/request" className="hover:bg-red-700 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 hover:scale-105">Request Blood</Link>
+                {session?.user?.role === 'admin' && (
+                  <>
+                    <Link href="/request" className="hover:bg-red-700 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 hover:scale-105">Request Blood</Link>
+                    <Link href="/admin/create" className="hover:bg-red-700 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 hover:scale-105">Create Admin</Link>
+                  </>
+                )}
                 <Link href="/dashboard" className="hover:bg-red-700 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 hover:scale-105">Dashboard</Link>
                 
                 {/* Notification Bell */}
@@ -203,10 +211,17 @@ export default function Navbar() {
           >
             <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-red-700">
               <Link href="/" className="block hover:bg-red-800 px-3 py-2 rounded-md text-base font-medium transition-colors">Home</Link>
-              <Link href="/search" className="block hover:bg-red-800 px-3 py-2 rounded-md text-base font-medium transition-colors">Find Blood</Link>
+              {session?.user?.role === 'admin' && (
+                <Link href="/search" className="block hover:bg-red-800 px-3 py-2 rounded-md text-base font-medium transition-colors">Find Blood</Link>
+              )}
               {status === 'authenticated' ? (
                 <>
-                  <Link href="/request" className="block hover:bg-red-800 px-3 py-2 rounded-md text-base font-medium transition-colors">Request Blood</Link>
+                  {session?.user?.role === 'admin' && (
+                    <>
+                      <Link href="/request" className="block hover:bg-red-800 px-3 py-2 rounded-md text-base font-medium transition-colors">Request Blood</Link>
+                      <Link href="/admin/create" className="block hover:bg-red-800 px-3 py-2 rounded-md text-base font-medium transition-colors">Create Admin</Link>
+                    </>
+                  )}
                   <Link href="/dashboard" className="block hover:bg-red-800 px-3 py-2 rounded-md text-base font-medium transition-colors">Dashboard</Link>
                   <button onClick={handleLogout} className="block w-full text-left hover:bg-red-800 px-3 py-2 rounded-md text-base font-medium transition-colors">Logout</button>
                 </>

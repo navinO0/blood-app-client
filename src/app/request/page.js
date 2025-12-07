@@ -22,6 +22,10 @@ export default function RequestBlood() {
       router.push('/login');
     } else if (status === 'authenticated' && session?.user) {
       const parsedUser = session.user;
+      if (parsedUser.role !== 'admin') {
+        router.push('/');
+        return;
+      }
       setUser(parsedUser);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

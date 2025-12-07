@@ -1,7 +1,9 @@
 "use client";
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+
 import Link from 'next/link';
+import { signIn } from 'next-auth/react';
 import api from '../../../utils/api';
 
 export default function Register() {
@@ -9,7 +11,7 @@ export default function Register() {
     name: '',
     email: '',
     password: '',
-    role: 'seeker',
+    role: 'donor',
     bloodType: '',
     location: '',
     phone: '',
@@ -27,7 +29,19 @@ export default function Register() {
       const { data } = await api.post('/auth/register', formData);
       localStorage.setItem('user', JSON.stringify(data));
       localStorage.setItem('token', data.token);
-      router.push('/dashboard');
+      
+      // Auto-login with NextAuth
+      const result = await signIn('credentials', {
+        redirect: false,
+        email: formData.email,
+        password: formData.password,
+      });
+
+      if (result.error) {
+        setError(result.error);
+      } else {
+        router.push('/dashboard');
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Registration failed');
     }
@@ -82,33 +96,9 @@ export default function Register() {
             onChange={handleChange}
           />
           
-          <div className="flex items-center space-x-4">
-            <label className="flex items-center">
-              <input
-                type="radio"
-                name="role"
-                value="seeker"
-                checked={formData.role === 'seeker'}
-                onChange={handleChange}
-                className="form-radio h-4 w-4 text-red-600"
-              />
-              <span className="ml-2 text-gray-700">Blood Seeker</span>
-            </label>
-            <label className="flex items-center">
-              <input
-                type="radio"
-                name="role"
-                value="donor"
-                checked={formData.role === 'donor'}
-                onChange={handleChange}
-                className="form-radio h-4 w-4 text-red-600"
-              />
-              <span className="ml-2 text-gray-700">Blood Donor</span>
-            </label>
-          </div>
 
-          {formData.role === 'donor' && (
-            <select
+
+          <select
               name="bloodType"
               required
               className="block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-red-500 focus:border-red-500 sm:text-sm"
@@ -124,7 +114,6 @@ export default function Register() {
               <option value="O+">O+</option>
               <option value="O-">O-</option>
             </select>
-          )}
 
           <button
             type="submit"

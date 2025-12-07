@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { User, Droplet, MapPin, Phone, Bell, Mail, MessageSquare, Edit, ChevronDown, ChevronUp } from 'lucide-react';
+import { User, Droplet, MapPin, Phone, Bell, Mail, MessageSquare, Edit, ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import io from 'socket.io-client';
 import api from '../../utils/api';
 import { registerPush } from '../../utils/push';
@@ -240,6 +240,27 @@ export default function Dashboard() {
                   <Droplet className="h-5 w-5 mr-2 text-red-500" /> Blood Type
                 </dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2 font-bold text-red-600">{user.bloodType}</dd>
+              </div>
+            )}
+            {user.role === 'donor' && (
+              <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                <dt className="text-sm font-medium text-gray-500 flex items-center">
+                  <Clock className="h-5 w-5 mr-2 text-gray-400" /> Last Donated
+                </dt>
+                <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                  {user.lastDonatedDate ? (
+                    <>
+                      {new Date(user.lastDonatedDate).toLocaleDateString()}
+                      {new Date(user.lastDonatedDate) > new Date(new Date().setMonth(new Date().getMonth() - 3)) && (
+                        <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                          Cooling Period
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-green-600 font-medium">Never / Eligible to Donate</span>
+                  )}
+                </dd>
               </div>
             )}
           </dl>
