@@ -20,6 +20,10 @@ api.interceptors.request.use(async (config) => {
     }
   }
 
+  // Debug: Log full URL to troubleshoot Network Errors
+  console.log(`API Request: ${config.method.toUpperCase()} ${config.baseURL}${config.url}`);
+
+
   if (enableEncryption && config.data) {
      console.log('API Request - Encrypting:', { enableEncryption, data: config.data }); // Debug Log
      try {

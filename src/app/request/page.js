@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '../../utils/api';
 import { useSession } from "next-auth/react";
-import { Copy, MessageCircle, Mail, Share2, CheckCircle, MapPin } from 'lucide-react';
+import { Copy, MessageCircle, Mail, Share2, CheckCircle, MapPin, Loader2 } from 'lucide-react';
 
 export default function RequestBlood() {
   const [user, setUser] = useState(null);
@@ -234,12 +234,19 @@ export default function RequestBlood() {
           </label>
         </div>
         
+
+
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-red-600 text-white py-3 px-4 rounded-lg hover:bg-red-700 disabled:opacity-50 font-semibold transition-colors"
+          className="w-full bg-red-600 text-white py-3 px-4 rounded-lg hover:bg-red-700 disabled:opacity-50 font-semibold transition-colors flex items-center justify-center"
         >
-          {loading ? 'Posting...' : 'Post Request'}
+          {loading ? (
+             <>
+               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+               Posting...
+             </>
+          ) : 'Post Request'}
         </button>
       </form>
 

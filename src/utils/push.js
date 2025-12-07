@@ -19,9 +19,10 @@ function urlBase64ToUint8Array(base64String) {
 
 export async function registerPush(userId) {
   if (!publicVapidKey) {
-      console.error('VAPID Public Key not found');
+      console.error('VAPID Public Key not found in environment');
       return;
   }
+  console.log('Registering Push with VAPID Key:', publicVapidKey.substring(0, 10) + '...'); // Log partial key for verification
 
   if ('serviceWorker' in navigator) {
     try {

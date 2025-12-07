@@ -14,6 +14,7 @@ export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [adminToast, setAdminToast] = useState(null);
   const { data: session, status } = useSession();
   const router = useRouter();
   const notifRef = useRef(null);
@@ -63,14 +64,38 @@ export default function Navbar() {
       }
 
       socket = io(socketUrl, { path: socketPath });
-      socket.on('connect', () => console.log('Navbar Socket connected'));
-      
+      // Debug logging
+      socket.on('connect', () => console.log('Navbar Socket connected:', socket.id));
+      socket.on('connect_error', (err) => console.error('Navbar Socket connection error:', err));
+
       if (session?.user?.role === 'seeker') {
         socket.on('donation-accepted-notification', (data) => {
+            console.log('Navbar received donation-accepted:', data);
             if (data.seekerId === session.user._id) {
                 setNotifications(prev => [data, ...prev]);
             }
         });
+      }
+
+      if (session?.user?.role === 'donor' || session?.user?.isAvailable) {
+         socket.on('blood-request-notification', (data) => {
+            console.log('Navbar received blood-request:', data);
+            setNotifications(prev => [data, ...prev]);
+         });
+      }
+
+      // Admin Login Toaster Listener
+      if (session?.user?.role === 'admin') {
+          socket.on('user_logged_in', (data) => {
+              console.log('Admin received login event:', data);
+              setAdminToast({ 
+                  visible: true, 
+                  message: `User Logged In: ${data.userName} (${data.role})`,
+                  time: new Date().toLocaleTimeString() 
+              });
+              // Auto hide after 5s
+              setTimeout(() => setAdminToast(null), 5000);
+          });
       }
     }
     return () => {
@@ -86,6 +111,29 @@ export default function Navbar() {
 
   return (
     <nav className="bg-red-600 text-white shadow-lg relative z-50">
+        {/* Admin Toaster */}
+        <AnimatePresence>
+            {adminToast && (
+                <motion.div
+                    initial={{ opacity: 0, y: 50, x: '-50%' }}
+                    animate={{ opacity: 1, y: 0, x: '-50%' }}
+                    exit={{ opacity: 0, y: 20, x: '-50%' }}
+                    className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-lg shadow-2xl z-[100] flex items-center gap-3 border border-gray-700"
+                >
+                    <div className="bg-green-500 rounded-full p-1">
+                        <Bell className="h-4 w-4 text-white" />
+                    </div>
+                    <div>
+                        <p className="font-bold text-sm">{adminToast.message}</p>
+                        <p className="text-xs text-gray-400">{adminToast.time}</p>
+                    </div>
+                    <button onClick={() => setAdminToast(null)} className="ml-2 hover:text-gray-300">
+                        <X className="h-4 w-4" />
+                    </button>
+                </motion.div>
+            )}
+        </AnimatePresence>
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">

@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { User, Droplet, MapPin, Phone, Bell, Mail, MessageSquare, Edit, ChevronDown, ChevronUp, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
+import { User, Droplet, MapPin, Phone, Bell, Mail, MessageSquare, Edit, ChevronDown, ChevronUp, Clock, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
 import io from 'socket.io-client';
 import api from '../../utils/api';
 import { registerPush } from '../../utils/push';
@@ -21,7 +21,13 @@ export default function Dashboard() {
   const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false); // New state for forced completion
   const [editFormData, setEditFormData] = useState({});
   const [notificationAudio, setNotificationAudio] = useState(null);
+  const [loadingStates, setLoadingStates] = useState({}); // Map of loading states
   const router = useRouter();
+
+  // Helper to set loading state
+  const setLoading = (key, isLoading) => {
+    setLoadingStates(prev => ({ ...prev, [key]: isLoading }));
+  };
 
   const fetchAcceptedDonors = async (requestId) => {
     try {
@@ -137,7 +143,9 @@ export default function Dashboard() {
   }, [status, session?.user?._id]);
 
   const handleAcceptRequest = async (notification) => {
+    const key = `accept-${notification._id}`;
     try {
+      setLoading(key, true);
       await api.post('/blood/accept', {
         requestId: notification.requestId || notification.relatedRequestId,
         donorId: user._id,
@@ -158,13 +166,17 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Error accepting request:', error);
       alert('Failed to accept request.');
+    } finally {
+      setLoading(key, false);
     }
   };
 
   const handleConfirmDonation = async (donorId, requestId) => {
       if (!window.confirm("Are you sure you want to confirm that this donor has donated blood? This will mark them as unavailable.")) return;
 
+      const key = `confirm-${donorId}`;
       try {
+          setLoading(key, true);
           await api.post('/blood/confirm-donation', { donorId, requestId });
           alert("Donation confirmed successfully!");
           // Refresh donors list to reflect changes (e.g. check availability or last donated date)
@@ -172,6 +184,8 @@ export default function Dashboard() {
       } catch (error) {
           console.error("Error confirming donation:", error);
           alert("Failed to confirm donation.");
+      } finally {
+          setLoading(key, false);
       }
   };
   
@@ -191,21 +205,33 @@ export default function Dashboard() {
   };
 
   const toggleAvailability = async () => {
-    const newUser = { ...user, isAvailable: !user.isAvailable };
-    setUser(newUser);
-    localStorage.setItem('user', JSON.stringify(newUser));
+    const newAvailability = !user.isAvailable;
+    const key = 'availability';
     
-    // Sync with backend
+    // Optimistic UI update removed to show loading state correctly or handle manually?
+    // Let's keep optimistic but show loading on the specific button area
+    
     try {
-        await api.put('/auth/profile', { userId: user._id, isAvailable: newUser.isAvailable });
+        setLoading(key, true);
+        await api.put('/auth/profile', { userId: user._id, isAvailable: newAvailability });
+        
+        const newUser = { ...user, isAvailable: newAvailability };
+        setUser(newUser);
+        localStorage.setItem('user', JSON.stringify(newUser));
+        
     } catch (error) {
         console.error("Failed to update availability", error);
+        alert("Failed to update availability");
+    } finally {
+        setLoading(key, false);
     }
   };
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
+    const key = 'editProfile';
     try {
+        setLoading(key, true);
         const res = await api.put('/auth/profile', { userId: user._id, ...editFormData });
         const updatedUser = res.data;
         setUser(updatedUser);
@@ -220,6 +246,8 @@ export default function Dashboard() {
     } catch (error) {
         console.error('Update failed:', error);
         alert('Failed to update profile.');
+    } finally {
+        setLoading(key, false);
     }
   };
   
@@ -438,6 +466,7 @@ export default function Dashboard() {
                   <div className="mt-6">
                       <button type="submit" className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-md transition-colors">
                           Save & Continue
+                          {loadingStates['editProfile'] && <Loader2 className="ml-2 h-4 w-4 animate-spin inline" />}
                       </button>
                   </div>
               </form>
@@ -474,7 +503,10 @@ export default function Dashboard() {
                 </div>
                 <div className="flex justify-end space-x-2 mt-4">
                     <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancel</button>
-                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save Changes</button>
+                    <button type="submit" disabled={loadingStates['editProfile']} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center disabled:opacity-50">
+                        {loadingStates['editProfile'] && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save Changes
+                    </button>
                 </div>
             </form>
           </div>
@@ -612,9 +644,11 @@ export default function Dashboard() {
                             e.stopPropagation();
                             handleAcceptRequest(notif);
                           }}
-                          className="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 mt-2 sm:mt-0"
+                          className={`bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 mt-2 sm:mt-0 items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed`}
+                          disabled={loadingStates[`accept-${notif._id}`]}
                         >
                           Accept
+                          {loadingStates[`accept-${notif._id}`] && <Loader2 className="ml-2 h-4 w-4 animate-spin inline" />}
                         </button>
                       )}
                     </div>
@@ -690,9 +724,11 @@ export default function Dashboard() {
                                                     e.stopPropagation();
                                                     handleConfirmDonation(donor._id, notif.relatedRequestId);
                                                   }}
-                                                  className="text-xs bg-gray-800 text-white px-3 py-1 rounded hover:bg-black transition-colors"
+                                                  className="text-xs bg-gray-800 text-white px-3 py-1 rounded hover:bg-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                                                  disabled={loadingStates[`confirm-${donor._id}`]}
                                                 >
                                                   Mark as Donated
+                                                  {loadingStates[`confirm-${donor._id}`] && <Loader2 className="ml-1 h-3 w-3 animate-spin inline" />}
                                                 </button>
                                             </div>
                                         )}
