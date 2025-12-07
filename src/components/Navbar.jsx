@@ -49,7 +49,20 @@ export default function Navbar() {
       fetchNotifications(session.user._id);
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-      socket = io(apiUrl);
+      let socketUrl = apiUrl;
+      let socketPath = undefined;
+      
+      try {
+        const urlObj = new URL(apiUrl);
+        socketUrl = urlObj.origin;
+        if (urlObj.pathname && urlObj.pathname.includes('/blood')) {
+            socketPath = '/blood/socket.io';
+        }
+      } catch (e) {
+        console.error("Error parsing API URL for socket:", e);
+      }
+
+      socket = io(socketUrl, { path: socketPath });
       socket.on('connect', () => console.log('Navbar Socket connected'));
       
       if (session.user.role === 'seeker') {

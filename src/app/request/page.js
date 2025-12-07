@@ -37,7 +37,6 @@ export default function RequestBlood() {
     setLoading(true);
     setMessage('');
     setCreatedRequest(null);
-
     try {
       const response = await api.post('/blood/request', {
         seekerId: user._id,
@@ -47,6 +46,8 @@ export default function RequestBlood() {
         locationUrl: locationUrl || undefined,
         sendEmailNotifications,
       });
+
+
       setCreatedRequest(response.data);
       setMessage('Request posted successfully! Share the link below to find donors.');
       // Reset form
