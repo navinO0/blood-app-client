@@ -65,7 +65,7 @@ export default function Navbar() {
       socket = io(socketUrl, { path: socketPath });
       socket.on('connect', () => console.log('Navbar Socket connected'));
       
-      if (session.user.role === 'seeker') {
+      if (session?.user?.role === 'seeker') {
         socket.on('donation-accepted-notification', (data) => {
             if (data.seekerId === session.user._id) {
                 setNotifications(prev => [data, ...prev]);
@@ -76,7 +76,7 @@ export default function Navbar() {
     return () => {
       if (socket) socket.disconnect();
     }
-  }, [status, session]);
+  }, [status, session?.user?._id]);
 
   const handleLogout = async () => {
     await signOut({ redirect: false });

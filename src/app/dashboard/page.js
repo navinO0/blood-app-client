@@ -134,7 +134,7 @@ export default function Dashboard() {
         socket.disconnect();
       };
     }
-  }, [status, session, router]);
+  }, [status, session?.user?._id]);
 
   const handleAcceptRequest = async (notification) => {
     try {
