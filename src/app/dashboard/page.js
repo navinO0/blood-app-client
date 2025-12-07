@@ -642,12 +642,18 @@ export default function Dashboard() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleAcceptRequest(notif);
+                            if (notif.status !== 'accepted') {
+                                handleAcceptRequest(notif);
+                            }
                           }}
-                          className={`bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 mt-2 sm:mt-0 items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed`}
-                          disabled={loadingStates[`accept-${notif._id}`]}
+                          className={`px-4 py-2 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 mt-2 sm:mt-0 items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed
+                            ${notif.status === 'accepted' 
+                                ? 'bg-green-600 text-white cursor-default hover:bg-green-700' 
+                                : 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500'
+                            }`}
+                          disabled={loadingStates[`accept-${notif._id}`] || notif.status === 'accepted'}
                         >
-                          Accept
+                          {notif.status === 'accepted' ? 'Accepted' : 'Accept'}
                           {loadingStates[`accept-${notif._id}`] && <Loader2 className="ml-2 h-4 w-4 animate-spin inline" />}
                         </button>
                       )}
