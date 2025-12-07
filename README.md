@@ -44,7 +44,7 @@ A Next.js 14 frontend application for the Blood Donation platform with real-time
 
 ```bash
 # Backend API URL
-NEXT_PUBLIC_API_URL=http://localhost:5000
+NEXT_PUBLIC_API_URL=http://127.0.0.1:5000
 
 # NextAuth Configuration
 NEXTAUTH_URL=http://localhost:3000
@@ -107,10 +107,13 @@ npm run lint
 - **Notification System** - Real-time updates with sound
 
 ### Features
+### Features
 - **Unread Count Badge** - Shows number of unread notifications
-- **Sound Notifications** - Audio alert for new requests
+- **Sound Notifications** - Audio alert for new requests & accepted donations
 - **Click-to-Read** - Mark notifications as read on click
 - **Donor Contact Info** - Phone, email, SMS links for accepted donors
+- **Admin Toaster** - Real-time popup for Admins when users log in or accept donations
+- **Persistent State** - "Accepted" button maintains state after action
 
 ## 🔐 Authentication
 
