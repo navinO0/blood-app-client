@@ -3,6 +3,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { signIn } from "next-auth/react";
+import { encryptData } from '@/utils/encryption';
 
 export default function Login() {
   const [formData, setFormData] = useState({
@@ -22,8 +23,8 @@ export default function Login() {
     
     const result = await signIn("credentials", {
       redirect: false,
-      email: formData.email,
-      password: formData.password,
+      email: await encryptData(formData.email),
+      password: await encryptData(formData.password),
     });
 
     if (result.error) {
