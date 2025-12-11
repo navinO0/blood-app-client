@@ -20,7 +20,6 @@ export default function Dashboard() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false); // New state for forced completion
   const [editFormData, setEditFormData] = useState({});
-  const [notificationAudio, setNotificationAudio] = useState(null);
   const [loadingStates, setLoadingStates] = useState({}); // Map of loading states
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -108,8 +107,7 @@ export default function Dashboard() {
         });
       
       // Initialize notification audio
-      const audio = new Audio('/notification.mp3');
-      setNotificationAudio(audio);
+      const audio = typeof window !== 'undefined' ? new Audio('/notification.mp3') : null;
 
       // Initialize Socket.io
       // Initialize Socket.io
@@ -133,32 +131,38 @@ export default function Dashboard() {
 
       if (parsedUser.role === 'donor' || parsedUser.isAvailable) {
         socket.on('blood-request-notification', (data) => {
-          setNotifications((prev) => [data, ...prev]);
-          setUnreadCount(prev => prev + 1);
-          // Play notification sound
-          if (audio) {
-            audio.play().catch(err => console.log('Audio play failed:', err));
-          }
+          setNotifications((prev) => {
+            if (prev.some(n => n._id === data._id)) return prev;
+            setUnreadCount(count => count + 1); // Only increment if new
+            // Play notification sound
+            if (audio) {
+              audio.play().catch(err => console.log('Audio play failed:', err));
+            }
+            return [data, ...prev];
+          });
         });
       }
       
-      if (parsedUser.role === 'seeker') {
+      if (parsedUser.role === 'seeker' || parsedUser.role === 'admin') {
         // Fetch My Requests
         api.get('/blood/my-requests').then(res => setMyRequests(res.data)).catch(err => console.error(err));
 
         socket.on('donation-accepted-notification', (data) => {
            if (data.seekerId === parsedUser._id) {
-             setNotifications((prev) => [data, ...prev]);
-             setUnreadCount(prev => prev + 1);
+             setNotifications((prev) => {
+               if (prev.some(n => n._id === data._id)) return prev;
+               setUnreadCount(count => count + 1); // Only increment if new
+               // Play notification sound
+               if (audio) {
+                 audio.play().catch(err => console.log('Audio play failed:', err));
+               }
+               return [data, ...prev];
+             });
+             
              // Refresh accepted donors for this request
              fetchAcceptedDonors(data.requestId);
              // Refresh my requests to show updated status
              api.get('/blood/my-requests').then(res => setMyRequests(res.data)).catch(err => console.error(err));
-             
-             // Play notification sound
-             if (audio) {
-               audio.play().catch(err => console.log('Audio play failed:', err));
-             }
            }
         });
       }
@@ -167,7 +171,7 @@ export default function Dashboard() {
         socket.disconnect();
       };
     }
-  }, [status, session?.user?._id]);
+  }, [status, session?.user, router]);
 
   const loadMoreNotifications = async () => {
       if (isLoadingMore || !hasMore || !user) return;
@@ -342,7 +346,7 @@ export default function Dashboard() {
   const isInCoolingPeriod = (userData) => {
       if (!userData?.lastDonatedDate) return false;
       const lastDonated = new Date(userData.lastDonatedDate);
-      const coolingDays = parseInt(process.env.NEXT_PUBLIC_COOLING_PERIOD_DAYS) || 90;
+      const coolingDays = Number.parseInt(process.env.NEXT_PUBLIC_COOLING_PERIOD_DAYS) || 90;
       const coolingDate = new Date();
       coolingDate.setDate(coolingDate.getDate() - coolingDays);
       return lastDonated > coolingDate;
