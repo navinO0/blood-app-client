@@ -22,6 +22,9 @@ export default function Dashboard() {
   const [editFormData, setEditFormData] = useState({});
   const [notificationAudio, setNotificationAudio] = useState(null);
   const [loadingStates, setLoadingStates] = useState({}); // Map of loading states
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const router = useRouter();
 
   // Helper to set loading state
@@ -64,14 +67,38 @@ export default function Dashboard() {
           // Register for Push Notifications
           registerPush(freshUser._id);
 
-          // Fetch notifications and unread count
-          return api.get(`/notifications/${freshUser._id}`);
+          // Fetch notifications and unread count (Page 1)
+          return api.get(`/notifications/${freshUser._id}?page=1&limit=10`);
         })
         .then(res => {
-          if (res) {
-            setNotifications(res.data);
-            const unread = res.data.filter(n => !n.isRead).length;
-            setUnreadCount(unread);
+          if (res && res.data) {
+            // Handle new paginated response structure
+            const newNotifications = res.data.notifications || res.data; 
+            const pagination = res.data.pagination;
+
+            setNotifications(newNotifications);
+            
+            if (pagination) {
+                setHasMore(pagination.page < pagination.totalPages);
+                setPage(1); 
+            } else {
+                // Fallback for non-paginated API (if rollback happens)
+                setHasMore(false);
+            }
+
+            const unread = newNotifications.filter(n => !n.isRead).length; 
+            // Note: Unread count here is only for the fetched page. 
+            // Ideally backend should provide a separate unread count endpoint or total unread count in metadata.
+            // For now, let's trust the `unread-count` endpoint if we used it, but we are calculating client side.
+            // Actually, `unreadCount` state tracks total unread, but we only have a slice. 
+            // Let's count unread in current slice + maybe fetch total unread separately if needed.
+            // Simplified: Just count unread in this batch for now, or fetch total unread count from API if available.
+            
+            // Correction: There is a separate endpoint `GET /api/notifications/user/:userId/unread-count`.
+            // We should use that for the badge count.
+            api.get(`/notifications/user/${freshUser._id}/unread-count`)
+               .then(countRes => setUnreadCount(countRes.data.count))
+               .catch(e => console.error("Failed to fetch unread count", e));
           }
         })
         .catch(err => {
@@ -141,6 +168,37 @@ export default function Dashboard() {
       };
     }
   }, [status, session?.user?._id]);
+
+  const loadMoreNotifications = async () => {
+      if (isLoadingMore || !hasMore || !user) return;
+      
+      const nextPage = page + 1;
+      setIsLoadingMore(true);
+      
+      try {
+          const res = await api.get(`/notifications/${user._id}?page=${nextPage}&limit=10`);
+          const newNotifications = res.data.notifications || [];
+          const pagination = res.data.pagination;
+          
+          setNotifications(prev => {
+              // Append new notifications, avoiding duplicates just in case
+              const existingIds = new Set(prev.map(n => n._id));
+              const uniqueNew = newNotifications.filter(n => !existingIds.has(n._id));
+              return [...prev, ...uniqueNew];
+          });
+          
+          if (pagination) {
+              setHasMore(pagination.page < pagination.totalPages);
+              setPage(nextPage);
+          } else {
+              setHasMore(false);
+          }
+      } catch (error) {
+          console.error("Failed to load more notifications", error);
+      } finally {
+          setIsLoadingMore(false);
+      }
+  };
 
   const handleAcceptRequest = async (notification) => {
     const key = `accept-${notification._id}`;
@@ -748,6 +806,28 @@ export default function Dashboard() {
             })
           )}
         </ul>
+        {/* Load More Button */}
+        {hasMore && (
+            <div className="bg-gray-50 px-4 py-4 sm:px-6 border-t border-gray-200 flex justify-center">
+                <button
+                    onClick={loadMoreNotifications}
+                    disabled={isLoadingMore}
+                    className="flex items-center gap-2 px-4 py-2 border border-blue-300 shadow-sm text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                >
+                    {isLoadingMore ? (
+                        <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Loading...
+                        </>
+                    ) : (
+                        <>
+                            <ChevronDown className="h-4 w-4" />
+                            Load More
+                        </>
+                    )}
+                </button>
+            </div>
+        )}
       </div>
     </div>
   );
